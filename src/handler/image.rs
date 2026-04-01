@@ -150,7 +150,6 @@ pub async fn health_handler(State(state): State<Arc<AppState>>) -> axum::Json<He
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
     let (mem_mb, cpu) = if let Some(process) = sys.process(pid) {
-        // process.memory() returns bytes
         (process.memory() as f64 / 1_048_576.0, process.cpu_usage())
     } else {
         (0.0, 0.0)

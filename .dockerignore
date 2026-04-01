@@ -1,0 +1,5 @@
+target/
+.git/
+crabcrop-cache/
+.cache/
+.cargo/config.toml
