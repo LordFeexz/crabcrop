@@ -38,10 +38,10 @@ COPY --from=builder /usr/src/app/target/release/crabcrop .
 RUN mkdir -p .cache/images && chmod 777 .cache/images
 
 # Expose the default port
-EXPOSE 3001
+EXPOSE 3005
 
 # Operational environment variables
-ENV PORT=3001
+ENV PORT=3005
 ENV RUST_LOG=crabcrop=info,tower_http=info
 
 # Run the binary

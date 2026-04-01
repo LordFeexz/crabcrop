@@ -58,7 +58,7 @@ async fn main() -> anyhow::Result<()> {
         .layer(tower_http::cors::CorsLayer::permissive())
         .layer(tower_http::timeout::TimeoutLayer::new(std::time::Duration::from_secs(30)));
 
-    let port = std::env::var("PORT").unwrap_or_else(|_| "3001".to_string());
+    let port = std::env::var("PORT").unwrap_or_else(|_| "3005".to_string());
     let addr = SocketAddr::from(([0, 0, 0, 0], port.parse()?));
     tracing::info!("Server listening on {}", addr);
     

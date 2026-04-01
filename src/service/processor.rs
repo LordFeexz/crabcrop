@@ -37,11 +37,14 @@ pub fn process_image(input: &[u8], params: &ImageParams) -> Result<Bytes> {
 }
 
 fn resize_buffer(input: &[u8], params: &ImageParams) -> Result<VipsImage> {
-    let target_w = params.width.unwrap_or(0) as i32;
-    let target_h = params.height.unwrap_or(0) as i32;
-
-    let image = VipsImage::new_from_buffer(input, "")
+    let image = VipsImage::new_from_buffer(input, "access=sequential")
         .context("load image from buffer")?;
+
+    let (target_w,target_h) = (params.width.unwrap_or(0) as i32, params.height.unwrap_or(0) as i32);
+
+    if target_w <= 0 && target_h <= 0 {
+        return Ok(image);
+    }
 
     let src_w = image.get_width() as f64;
     let src_h = image.get_height() as f64;
