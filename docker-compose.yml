@@ -6,9 +6,9 @@ services:
     image: crabcrop:latest
     container_name: crabcrop
     ports:
-      - "3001:3001"
+      - "${PORT:-3005}:${PORT:-3005}"
     environment:
-      - PORT=3001
+      - PORT=${PORT:-3005}
       - RUST_LOG=crabcrop=info,tower_http=info
       # AWS Settings (Uncomment if using S3 cache/source fetching logic)
       # - AWS_ACCESS_KEY_ID=your_key
@@ -18,11 +18,10 @@ services:
       - crabcrop-cache:/app/.cache/images
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-3005}/health"]
       interval: 30s
       timeout: 10s
       retries: 3
 
 volumes:
   crabcrop-cache:
-    description: Persistent volume for image CDN cache
