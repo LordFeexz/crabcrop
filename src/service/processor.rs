@@ -131,24 +131,49 @@ fn encode(image: &VipsImage, params: &ImageParams) -> Result<Bytes> {
         )
         .context("encode webp")?,
 
-        ImageFormat::Avif => ops::heifsave_buffer_with_opts(
-            image,
-            &ops::HeifsaveBufferOptions {
-                q: quality,
-                compression: ops::ForeignHeifCompression::Av1,
-                ..Default::default()
-            },
-        )
-        .context("encode avif")?,
+        ImageFormat::Avif => {
+            // AVIF via HEIF — also flatten alpha if needed
+            let has_alpha = image.get_bands() >= 4;
+            let flat = if has_alpha {
+                ops::flatten(image).context("encode avif: flatten alpha")?
+            } else {
+                image.clone()
+            };
+            ops::heifsave_buffer_with_opts(
+                &flat,
+                &ops::HeifsaveBufferOptions {
+                    q: quality,
+                    compression: ops::ForeignHeifCompression::Av1,
+                    ..Default::default()
+                },
+            )
+            .context("encode avif")?
+        }
 
-        ImageFormat::Jpeg => ops::jpegsave_buffer_with_opts(
-            image,
-            &ops::JpegsaveBufferOptions {
-                q: quality,
-                ..Default::default()
-            },
-        )
-        .context("encode jpeg")?,
+        ImageFormat::Jpeg => {
+            // JPEG doesn't support alpha — flatten onto white background first
+            let has_alpha = image.get_bands() >= 4;
+            let flat = if has_alpha {
+                ops::flatten_with_opts(
+                    image,
+                    &ops::FlattenOptions {
+                        background: vec![255.0, 255.0, 255.0],
+                        ..Default::default()
+                    },
+                )
+                .context("encode jpeg: flatten alpha")?
+            } else {
+                image.clone()
+            };
+            ops::jpegsave_buffer_with_opts(
+                &flat,
+                &ops::JpegsaveBufferOptions {
+                    q: quality,
+                    ..Default::default()
+                },
+            )
+            .context("encode jpeg")?
+        }
 
         ImageFormat::Png => {
             ops::pngsave_buffer_with_opts(
