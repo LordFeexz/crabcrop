@@ -50,12 +50,21 @@ pub fn process_blur(input: &[u8]) -> Result<Bytes> {
     let blurred = ops::gaussblur(&resized, 2.0)
         .context("blur: gaussblur")?;
 
+    // Flatten alpha before webpsave to avoid encode issues on WebP sources
+    let has_alpha = blurred.get_bands() >= 4;
+    let flat = if has_alpha {
+        ops::flatten(&blurred).context("blur: flatten alpha")?
+    } else {
+        blurred
+    };
+
     let opts = ops::WebpsaveBufferOptions {
         q: 20,
+        keep: ops::ForeignKeep::None,
         ..Default::default()
     };
     
-    let bytes = ops::webpsave_buffer_with_opts(&blurred, &opts)
+    let bytes = ops::webpsave_buffer_with_opts(&flat, &opts)
         .context("blur: webpsave")?;
 
     Ok(Bytes::from(bytes))
@@ -165,10 +174,14 @@ fn encode(image: &VipsImage, params: &ImageParams) -> Result<Bytes> {
             } else {
                 image.clone()
             };
+            // Ensure sRGB colorspace before JPEG encode
+            let normalised = ops::colourspace(&flat, ops::Interpretation::Srgb)
+                .context("encode jpeg: colourspace")?;
             ops::jpegsave_buffer_with_opts(
-                &flat,
+                &normalised,
                 &ops::JpegsaveBufferOptions {
                     q: quality,
+                    keep: ops::ForeignKeep::None,
                     ..Default::default()
                 },
             )
