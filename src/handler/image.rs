@@ -133,6 +133,64 @@ fn cached_response(data: Bytes, mime: &'static str) -> Response {
         .unwrap()
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct BlurParams {
+    pub url: String,
+}
+
+#[instrument(skip(state))]
+pub async fn blur_handler(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<BlurParams>,
+) -> Result<Response, AppError> {
+    let key = format!("blur:{}", blake3::hash(params.url.as_bytes()).to_hex());
+    let mime = "image/webp";
+
+    if let Some(data) = state.cache.get(&key).await {
+        info!("serving blur from cache");
+        return Ok(cached_response(data, mime));
+    }
+
+    info!(url = %params.url, "processing new blur request");
+
+    let state_clone = state.clone();
+    let key_clone = key.clone();
+    let url = params.url.clone();
+
+    let result = state.dedup.run(&key, || async move {
+        let _permit = state_clone.semaphore.acquire().await.map_err(|e| anyhow::anyhow!(e))?;
+        
+        let raw_bytes = state_clone.storage.fetch(&url).await.map_err(|e| {
+            if e.to_string().contains("not found") {
+                anyhow::anyhow!("image not found: {}", url)
+            } else {
+                e
+            }
+        })?;
+
+        let processed = tokio::task::spawn_blocking(move || crate::service::processor::process_blur(&raw_bytes))
+            .await
+            .map_err(|e| anyhow::anyhow!("blocking task panic: {e}"))??;
+
+        state_clone.cache.ensure_disk_subdir(&key_clone).await?;
+        state_clone.cache.put(&key_clone, processed.clone()).await;
+
+        Ok(processed)
+    }).await;
+
+    match result {
+        Ok(data) => Ok(cached_response(data, mime)),
+        Err(e) => {
+            error!("blur processing error: {}", e);
+            if e.to_string().contains("not found") {
+                Err(AppError::NotFound(e.to_string()))
+            } else {
+                Err(AppError::Internal(e.to_string()))
+            }
+        }
+    }
+}
+
 #[derive(serde::Serialize)]
 pub struct HealthResponse {
     status: &'static str,

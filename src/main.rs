@@ -52,6 +52,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/health", get(handler::image::health_handler))
+        .route("/img/blur", get(handler::image::blur_handler))
         .route("/img", get(handler::image::image_handler))
         .with_state(state)
         .layer(tower_http::trace::TraceLayer::new_for_http())

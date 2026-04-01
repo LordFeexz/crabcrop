@@ -36,6 +36,31 @@ pub fn process_image(input: &[u8], params: &ImageParams) -> Result<Bytes> {
         .context("libvips: encode failed")
 }
 
+/// A minimal, ultra-fast pipeline for generating low-quality placeholders.
+pub fn process_blur(input: &[u8]) -> Result<Bytes> {
+    let image = VipsImage::new_from_buffer(input, "access=sequential")
+        .context("blur: load image")?;
+
+    let src_w = image.get_width() as f64;
+    let scale = 20.0 / src_w;
+    
+    let resized = ops::resize(&image, scale)
+        .context("blur: resize")?;
+
+    let blurred = ops::gaussblur(&resized, 2.0)
+        .context("blur: gaussblur")?;
+
+    let opts = ops::WebpsaveBufferOptions {
+        q: 20,
+        ..Default::default()
+    };
+    
+    let bytes = ops::webpsave_buffer_with_opts(&blurred, &opts)
+        .context("blur: webpsave")?;
+
+    Ok(Bytes::from(bytes))
+}
+
 fn resize_buffer(input: &[u8], params: &ImageParams) -> Result<VipsImage> {
     let image = VipsImage::new_from_buffer(input, "access=sequential")
         .context("load image from buffer")?;
