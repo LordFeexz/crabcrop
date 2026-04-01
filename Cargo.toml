@@ -1,0 +1,58 @@
+[package]
+name = "crabcrop"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "crabcrop"
+path = "src/main.rs"
+
+[dependencies]
+# HTTP server
+axum = { version = "0.7", features = ["multipart"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace", "timeout"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Logging / tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Image processing via libvips
+libvips = "1.4"
+
+# In-memory cache
+moka = { version = "0.12", features = ["future"] }
+
+# Disk cache / async file I/O
+tokio-util = { version = "0.7", features = ["io"] }
+
+# HTTP client (fetch external images)
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+
+# AWS S3 / DigitalOcean Spaces
+aws-config = { version = "1", features = ["behavior-version-latest"] }
+aws-sdk-s3 = "1"
+
+# Hashing
+blake3 = "1"
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# Byte utilities
+bytes = "1"
+sysinfo = "0.38.4"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
