@@ -70,6 +70,8 @@ pub struct RawImageParams {
     pub q: Option<u8>,
     /// Fit mode: cover | contain | fill
     pub fit: Option<String>,
+    /// If true, bypass cache and reprocess
+    pub revalidate: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -80,6 +82,9 @@ pub struct ImageParams {
     pub format: ImageFormat,
     pub quality: u8,
     pub fit: FitMode,
+    /// Cache control: if true, bypass cache and reprocess
+    #[allow(dead_code)]
+    pub revalidate: bool,
 }
 
 #[derive(Debug, Error)]
@@ -148,6 +153,7 @@ impl ImageParams {
             format,
             quality,
             fit,
+            revalidate: raw.revalidate.unwrap_or(false),
         })
     }
 }

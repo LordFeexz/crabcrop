@@ -117,7 +117,11 @@ WORKDIR /app
 RUN mkdir -p .cache/images && chmod 777 .cache/images
 
 EXPOSE 3005
+ARG CDN_SECRET
 ENV PORT=3005
 ENV RUST_LOG=crabcrop=info,tower_http=info
+ENV CDN_SECRET=${CDN_SECRET}
+ENV CDN_DEV_MODE=false
+ENV DISK_CACHE_TTL_HOURS=24
 
 CMD ["./crabcrop"]

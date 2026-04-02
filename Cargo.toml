@@ -47,6 +47,11 @@ blake3 = "1"
 anyhow = "1"
 thiserror = "1"
 
+# HMAC signing
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
 # Byte utilities
 bytes = "1"
 sysinfo = "0.38.4"

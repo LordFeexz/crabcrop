@@ -56,14 +56,19 @@ pub async fn image_handler(
 
     let params = ImageParams::from_raw(raw, accept).map_err(|e| AppError::BadRequest(e.to_string()))?;
 
+    let revalidate = params.revalidate;
     let key = cache_key(&params);
     let mime = params.format.mime_type();
 
     info!(key = %key, url = %params.url, "image request");
 
-    if let Some(cached) = state.cache.get(&key).await {
-        info!("serving from cache (HIT)");
-        return Ok(cached_response(cached, mime));
+    if !revalidate {
+        if let Some(cached) = state.cache.get(&key).await {
+            info!("serving from cache (HIT)");
+            return Ok(cached_response(cached, mime));
+        }
+    } else {
+        info!("revalidation requested, bypassing cache");
     }
 
     let params_clone = params.clone();
@@ -151,6 +156,8 @@ fn cached_response(data: Bytes, mime: &'static str) -> Response {
 #[derive(Debug, serde::Deserialize)]
 pub struct BlurParams {
     pub url: String,
+    #[serde(default)]
+    pub revalidate: bool,
 }
 
 #[instrument(skip(state))]
@@ -161,9 +168,13 @@ pub async fn blur_handler(
     let key = format!("blur:{}", blake3::hash(params.url.as_bytes()).to_hex());
     let mime = "image/webp";
 
-    if let Some(data) = state.cache.get(&key).await {
-        info!("serving blur from cache");
-        return Ok(cached_response(data, mime));
+    if !params.revalidate {
+        if let Some(data) = state.cache.get(&key).await {
+            info!("serving blur from cache");
+            return Ok(cached_response(data, mime));
+        }
+    } else {
+        info!("blur revalidation requested, bypassing cache");
     }
 
     info!(url = %params.url, "processing new blur request");

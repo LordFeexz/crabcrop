@@ -43,6 +43,7 @@ mod tests {
             format: ImageFormat::Webp,
             quality: 85,
             fit: FitMode::Cover,
+            revalidate: false,
         }
     }
 

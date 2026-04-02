@@ -1,16 +1,18 @@
-use axum::{routing::get,Router};
+mod handler;
+mod middleware;
+mod model;
+mod service;
+mod storage;
+mod utils;
+
+use axum::{routing::{get, post}, Router};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use service::{cache::ImageCache, dedup::DedupManager, processor::init_vips};
 use storage::s3::StorageClient;
-
-mod handler;
-mod model;
-mod service;
-mod storage;
-mod utils;
+use self::middleware as mw;
 
 
 pub struct AppState {
@@ -22,6 +24,10 @@ pub struct AppState {
     pub dedup: DedupManager,
     /// Concurrency limit semaphore to prevent OOM
     pub semaphore: Arc<Semaphore>,
+    /// HMAC secret for URL signing (None = reject all in production)
+    pub cdn_secret: Option<String>,
+    /// If true, bypass signature validation (development mode)
+    pub dev_mode: bool,
 }
 
 #[tokio::main]
@@ -43,21 +49,67 @@ async fn main() -> anyhow::Result<()> {
     let dedup = DedupManager::new();
     let semaphore = Arc::new(Semaphore::new(100)); // Max 100 concurrent image processing jobs
 
+    let cdn_secret = std::env::var("CDN_SECRET").ok();
+    let dev_mode = std::env::var("CDN_DEV_MODE")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false);
+
+    if dev_mode {
+        tracing::warn!("CDN_DEV_MODE is ON — signature validation DISABLED");
+    } else if cdn_secret.is_none() {
+        tracing::warn!("CDN_SECRET not set — all signed requests will be rejected");
+    }
+
     let state = Arc::new(AppState {
         cache,
         storage,
         dedup,
         semaphore,
+        cdn_secret,
+        dev_mode,
     });
+
+    // Routes that require signature validation
+    let signed_routes = Router::new()
+        .route("/img", get(handler::image::image_handler))
+        .route("/img/blur", get(handler::image::blur_handler))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            mw::signature::signature_middleware,
+        ));
 
     let app = Router::new()
         .route("/health", get(handler::image::health_handler))
-        .route("/img/blur", get(handler::image::blur_handler))
-        .route("/img", get(handler::image::image_handler))
-        .with_state(state)
+        .route("/cache/purge", post(handler::cache::purge_handler))
+        .merge(signed_routes)
+        .with_state(state.clone())
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .layer(tower_http::cors::CorsLayer::permissive())
         .layer(tower_http::timeout::TimeoutLayer::new(std::time::Duration::from_secs(30)));
+
+    let cleanup_cache = state.cache.clone();
+    let cleanup_ttl_hours = std::env::var("DISK_CACHE_TTL_HOURS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(24);
+    
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600)); // Every 1 hour
+        let max_age = std::time::Duration::from_secs(cleanup_ttl_hours * 3600);
+        loop {
+            interval.tick().await;
+            let start = std::time::Instant::now();
+            let deleted = cleanup_cache.cleanup_expired_disk_cache(max_age).await;
+            if deleted > 0 {
+                tracing::info!(
+                    deleted_files = deleted,
+                    elapsed_ms = start.elapsed().as_millis(),
+                    ttl_hours = cleanup_ttl_hours,
+                    "automated disk cache cleanup completed"
+                );
+            }
+        }
+    });
 
     let port = std::env::var("PORT").unwrap_or_else(|_| "3005".to_string());
     let addr = SocketAddr::from(([0, 0, 0, 0], port.parse()?));
