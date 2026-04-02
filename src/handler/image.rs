@@ -62,7 +62,7 @@ pub async fn image_handler(
     info!(key = %key, url = %params.url, "image request");
 
     if let Some(cached) = state.cache.get(&key).await {
-        info!("serving from cache");
+        info!("serving from cache (HIT)");
         return Ok(cached_response(cached, mime));
     }
 
@@ -98,8 +98,10 @@ async fn process_pipeline(
     params: ImageParams,
     key: String,
 ) -> anyhow::Result<Bytes> {
+    let t_total = std::time::Instant::now();
     let _permit = state.semaphore.acquire().await?;
 
+    let t_fetch = std::time::Instant::now();
     let raw_bytes = state
         .storage
         .fetch(&params.url)
@@ -112,13 +114,26 @@ async fn process_pipeline(
                 e
             }
         })?;
+    let fetch_ms = t_fetch.elapsed().as_millis();
 
+    let t_process = std::time::Instant::now();
     let processed = tokio::task::spawn_blocking(move || process_image(&raw_bytes, &params))
         .await
         .map_err(|e| anyhow::anyhow!("blocking task panic: {e}"))??;
+    let process_ms = t_process.elapsed().as_millis();
 
+    let t_cache = std::time::Instant::now();
     state.cache.ensure_disk_subdir(&key).await?;
     state.cache.put(&key, processed.clone()).await;
+    let cache_ms = t_cache.elapsed().as_millis();
+
+    info!(
+        fetch_ms,
+        process_ms,
+        cache_ms,
+        total_ms = t_total.elapsed().as_millis(),
+        "pipeline done"
+    );
 
     Ok(processed)
 }
