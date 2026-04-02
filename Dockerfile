@@ -61,6 +61,12 @@ RUN apt-get update && apt-get install -y \
     libgsf-1-dev \
     libheif-dev \
     libaom-dev \
+    libde265-dev \
+    libcairo2-dev \
+    liblcms2-dev \
+    libopenjp2-7-dev \
+    libopenexr-dev \
+    librsvg2-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN ldconfig
@@ -91,6 +97,9 @@ RUN apt-get update && apt-get install -y \
     libcgif0 \
     librsvg2-2 \
     liblcms2-2 \
+    libcairo2 \
+    libopenjp2-7 \
+    libopenexr-3-1-30 \
     ca-certificates \
     curl \
     && rm -rf /var/lib/apt/lists/*
