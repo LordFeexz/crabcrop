@@ -36,7 +36,7 @@ RUN apt-get update && apt-get install -y \
 RUN wget -qO- "https://github.com/libvips/libvips/releases/download/v${VIPS_VERSION}/vips-${VIPS_VERSION}.tar.xz" \
     | tar -xJ -C /tmp \
     && cd /tmp/vips-${VIPS_VERSION} \
-    && meson setup build --prefix=/usr/local --buildtype=release --strip -Dheif=enabled -Daom=enabled -Dwebp=enabled -Djpeg=enabled -Dpng=enabled \
+    && meson setup build --prefix=/usr/local --buildtype=release --strip \
     && ninja -C build \
     && ninja -C build install \
     && ldconfig
