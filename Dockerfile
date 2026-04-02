@@ -46,8 +46,6 @@ FROM rust:1.94.1-slim-bookworm AS builder
 
 # Install only what the Rust linker needs — use the custom-built libvips from Stage 1
 COPY --from=vips-builder /usr/local /usr/local
-COPY --from=vips-builder /usr/lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu
-COPY --from=vips-builder /usr/lib/aarch64-linux-gnu /usr/lib/aarch64-linux-gnu
 
 RUN apt-get update && apt-get install -y \
     pkg-config \
