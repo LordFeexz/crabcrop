@@ -87,6 +87,8 @@ RUN apt-get update && apt-get install -y \
     libjpeg62-turbo \
     libpng16-16 \
     libwebp7 \
+    libwebpmux3 \
+    libwebpdemux2 \
     libtiff6 \
     libexif12 \
     libgsf-1-114 \
