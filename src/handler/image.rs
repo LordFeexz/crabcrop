@@ -29,6 +29,7 @@ impl IntoResponse for AppError {
             AppError::NotFound(e) => (StatusCode::NOT_FOUND, e),
             AppError::Internal(e) => (StatusCode::INTERNAL_SERVER_ERROR, e),
         };
+        tracing::error!(status = %status, msg = %msg, "error response");
         (status, msg).into_response()
     }
 }

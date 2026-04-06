@@ -51,10 +51,12 @@ pub fn process_blur(input: &[u8]) -> Result<Bytes> {
         .context("blur: gaussblur")?;
 
     // Flatten alpha before webpsave to avoid encode issues on WebP sources
-    let flat_image = if blurred.get_bands() >= 4 {
-        ops::flatten(&blurred).context("blur: flatten alpha")?
+    let temp_flat;
+    let flat_image_ref = if blurred.get_bands() >= 4 {
+        temp_flat = ops::flatten(&blurred).context("blur: flatten alpha")?;
+        &temp_flat
     } else {
-        blurred.clone()
+        &blurred
     };
 
     let opts = ops::WebpsaveBufferOptions {
@@ -62,7 +64,7 @@ pub fn process_blur(input: &[u8]) -> Result<Bytes> {
         ..Default::default()
     };
     
-    let bytes = ops::webpsave_buffer_with_opts(&flat_image, &opts)
+    let bytes = ops::webpsave_buffer_with_opts(flat_image_ref, &opts)
         .context("blur: webpsave")?;
 
     Ok(Bytes::from(bytes))
@@ -140,14 +142,16 @@ fn encode(image: &VipsImage, params: &ImageParams) -> Result<Bytes> {
 
         ImageFormat::Avif => {
             // AVIF via HEIF — flatten alpha if needed
-            let flat_image = if image.get_bands() >= 4 {
-                ops::flatten(image).context("encode avif: flatten alpha")?
+            let temp_flat;
+            let flat_image_ref = if image.get_bands() >= 4 {
+                temp_flat = ops::flatten(image).context("encode avif: flatten alpha")?;
+                &temp_flat
             } else {
-                image.clone()
+                image
             };
             // Fallback to WebP if HEIF/AV1 codec is unavailable on this system
             ops::heifsave_buffer_with_opts(
-                &flat_image,
+                flat_image_ref,
                 &ops::HeifsaveBufferOptions {
                     q: quality,
                     compression: ops::ForeignHeifCompression::Av1,
@@ -157,7 +161,7 @@ fn encode(image: &VipsImage, params: &ImageParams) -> Result<Bytes> {
             .unwrap_or_else(|_| {
                 tracing::warn!("AVIF codec unavailable, falling back to WebP");
                 ops::webpsave_buffer_with_opts(
-                    &flat_image,
+                    flat_image_ref,
                     &ops::WebpsaveBufferOptions {
                         q: quality,
                         ..Default::default()
@@ -169,21 +173,23 @@ fn encode(image: &VipsImage, params: &ImageParams) -> Result<Bytes> {
 
         ImageFormat::Jpeg => {
             // JPEG doesn't support alpha — flatten onto white background first
-            let flat_image = if image.get_bands() >= 4 {
-                ops::flatten_with_opts(
+            let temp_flat;
+            let flat_image_ref = if image.get_bands() >= 4 {
+                temp_flat = ops::flatten_with_opts(
                     image,
                     &ops::FlattenOptions {
                         background: vec![255.0, 255.0, 255.0],
                         ..Default::default()
                     },
                 )
-                .context("encode jpeg: flatten alpha")?
+                .context("encode jpeg: flatten alpha")?;
+                &temp_flat
             } else {
-                image.clone()
+                image
             };
             
             // Ensure sRGB colorspace before JPEG encode
-            let normalised = ops::colourspace(&flat_image, ops::Interpretation::Srgb)
+            let normalised = ops::colourspace(flat_image_ref, ops::Interpretation::Srgb)
                 .context("encode jpeg: colourspace")?;
                 
             ops::jpegsave_buffer_with_opts(

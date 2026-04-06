@@ -47,10 +47,9 @@ pub async fn purge_handler(
     headers: HeaderMap,
     Json(body): Json<PurgeRequest>,
 ) -> impl IntoResponse {
-    // Authenticate via Bearer token
-    let secret = match &state.cdn_secret {
-        Some(s) => s,
-        None => return (StatusCode::FORBIDDEN, Json(PurgeResponse { status: "CDN_SECRET not configured", purged: 0 })),
+    let secret = match std::env::var("PURGE_TOKEN") {
+        Ok(s) => s,
+        Err(_) => return (StatusCode::FORBIDDEN, Json(PurgeResponse { status: "PURGE_TOKEN not configured", purged: 0 })),
     };
 
     let auth = headers
@@ -65,7 +64,6 @@ pub async fn purge_handler(
     }
 
     if body.wildcard {
-        // Purge ALL variants of this URL
         let count = state.cache.invalidate_by_url(&body.url).await;
         info!(url = %body.url, count, "wildcard purge complete");
         return (StatusCode::OK, Json(PurgeResponse { status: "purged", purged: count }));

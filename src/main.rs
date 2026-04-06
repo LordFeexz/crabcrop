@@ -24,9 +24,9 @@ pub struct AppState {
     pub dedup: DedupManager,
     /// Concurrency limit semaphore to prevent OOM
     pub semaphore: Arc<Semaphore>,
-    /// HMAC secret for URL signing (None = reject all in production)
-    pub cdn_secret: Option<String>,
-    /// If true, bypass signature validation (development mode)
+    /// Allowed origins for requests (empty = allow all)
+    pub accept_origins: Vec<String>,
+    /// If true, bypass origin validation (development mode)
     pub dev_mode: bool,
 }
 
@@ -49,15 +49,20 @@ async fn main() -> anyhow::Result<()> {
     let dedup = DedupManager::new();
     let semaphore = Arc::new(Semaphore::new(100)); // Max 100 concurrent image processing jobs
 
-    let cdn_secret = std::env::var("CDN_SECRET").ok();
+    let accept_origins = std::env::var("ACCEPT_ORIGINS")
+        .map(|s| s.split(',').map(|v| v.trim().to_string()).filter(|v| !v.is_empty()).collect())
+        .unwrap_or_else(|_| Vec::new());
+
     let dev_mode = std::env::var("CDN_DEV_MODE")
         .map(|v| v == "true" || v == "1")
         .unwrap_or(false);
 
     if dev_mode {
-        tracing::warn!("CDN_DEV_MODE is ON — signature validation DISABLED");
-    } else if cdn_secret.is_none() {
-        tracing::warn!("CDN_SECRET not set — all signed requests will be rejected");
+        tracing::warn!("CDN_DEV_MODE is ON — origin validation DISABLED");
+    } else if accept_origins.is_empty() {
+        tracing::warn!("ACCEPT_ORIGINS not set or empty — all origins will be allowed");
+    } else {
+        tracing::info!("ACCEPT_ORIGINS: {:?}", accept_origins);
     }
 
     let state = Arc::new(AppState {
@@ -65,23 +70,23 @@ async fn main() -> anyhow::Result<()> {
         storage,
         dedup,
         semaphore,
-        cdn_secret,
+        accept_origins,
         dev_mode,
     });
 
-    // Routes that require signature validation
-    let signed_routes = Router::new()
+    // Routes that require origin validation
+    let protected_routes = Router::new()
         .route("/img", get(handler::image::image_handler))
         .route("/img/blur", get(handler::image::blur_handler))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
-            mw::signature::signature_middleware,
+            mw::origin::origin_middleware,
         ));
 
     let app = Router::new()
         .route("/health", get(handler::image::health_handler))
         .route("/cache/purge", post(handler::cache::purge_handler))
-        .merge(signed_routes)
+        .merge(protected_routes)
         .with_state(state.clone())
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .layer(tower_http::cors::CorsLayer::permissive())
