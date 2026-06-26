@@ -45,7 +45,20 @@ async fn main() -> anyhow::Result<()> {
     vips_app.cache_set_max(0);
 
     let storage = StorageClient::new(None);
-    let cache = ImageCache::default_cache().await?;
+
+    let max_memory_gb: u64 = std::env::var("MAX_MEMORY_CACHE_GB")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2);
+    let max_memory_bytes = max_memory_gb * 1024 * 1024 * 1024;
+
+    let max_disk_gb: u64 = std::env::var("MAX_DISK_CACHE_GB")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(8);
+    let max_disk_bytes = max_disk_gb * 1024 * 1024 * 1024;
+
+    let cache = ImageCache::default_cache(max_memory_bytes).await?;
     let dedup = DedupManager::new();
     let semaphore = Arc::new(Semaphore::new(100)); // Max 100 concurrent image processing jobs
 
@@ -111,6 +124,14 @@ async fn main() -> anyhow::Result<()> {
                     elapsed_ms = start.elapsed().as_millis(),
                     ttl_hours = cleanup_ttl_hours,
                     "automated disk cache cleanup completed"
+                );
+            }
+
+            let deleted_over_limit = cleanup_cache.enforce_disk_cache_limit(max_disk_bytes).await;
+            if deleted_over_limit > 0 {
+                tracing::info!(
+                    deleted_files = deleted_over_limit,
+                    "enforced max disk cache limit"
                 );
             }
         }

@@ -5,8 +5,6 @@ use std::path::PathBuf;
 use tokio::fs;
 use tracing::{debug, instrument};
 
-/// Maximum number of entries in the in-memory cache
-const MEMORY_CACHE_CAPACITY: u64 = 1024;
 
 /// Default TTL for memory cache entries (10 minutes), overridable via CACHE_TTL_SECS
 fn cache_ttl_secs() -> u64 {
@@ -32,20 +30,23 @@ pub struct ImageCache {
 }
 
 impl ImageCache {
-    pub async fn new(capacity: u64) -> Result<Self> {
+    pub async fn new(capacity_bytes: u64) -> Result<Self> {
         let disk_dir = PathBuf::from(DISK_CACHE_DIR);
         fs::create_dir_all(&disk_dir).await?;
 
         let memory = MokaCache::builder()
-            .max_capacity(capacity)
+            .max_capacity(capacity_bytes)
+            .weigher(|_key, value: &Bytes| -> u32 {
+                value.len().try_into().unwrap_or(u32::MAX)
+            })
             .time_to_live(std::time::Duration::from_secs(cache_ttl_secs()))
             .build();
 
         Ok(Self { memory, disk_dir })
     }
 
-    pub async fn default_cache() -> Result<Self> {
-        Self::new(MEMORY_CACHE_CAPACITY).await
+    pub async fn default_cache(memory_bytes: u64) -> Result<Self> {
+        Self::new(memory_bytes).await
     }
 
     /// Return the current number of entries in the memory cache.
@@ -161,5 +162,48 @@ impl ImageCache {
         let dir = self.disk_dir.join(prefix);
         fs::create_dir_all(&dir).await?;
         Ok(())
+    }
+
+    /// Enforce disk cache size limit by deleting the oldest files until the total size is under the limit.
+    pub async fn enforce_disk_cache_limit(&self, max_bytes: u64) -> u32 {
+        let mut count: u32 = 0;
+        let mut total_size: u64 = 0;
+        let mut files_info = Vec::new();
+
+        if let Ok(mut entries) = fs::read_dir(&self.disk_dir).await {
+            while let Ok(Some(subdir)) = entries.next_entry().await {
+                if subdir.file_type().await.map(|t| t.is_dir()).unwrap_or(false) {
+                    if let Ok(mut files) = fs::read_dir(subdir.path()).await {
+                        while let Ok(Some(file)) = files.next_entry().await {
+                            if let Ok(metadata) = file.metadata().await {
+                                let size = metadata.len();
+                                total_size += size;
+                                let modified = metadata.modified().unwrap_or_else(|_| std::time::SystemTime::UNIX_EPOCH);
+                                files_info.push((file.path(), modified, size));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if total_size <= max_bytes {
+            return 0;
+        }
+
+        // Sort by modified time, ascending (oldest first)
+        files_info.sort_by(|a, b| a.1.cmp(&b.1));
+
+        for (path, _modified, size) in files_info {
+            if total_size <= max_bytes {
+                break;
+            }
+            if let Ok(_) = fs::remove_file(&path).await {
+                total_size = total_size.saturating_sub(size);
+                count += 1;
+            }
+        }
+        
+        count
     }
 }
